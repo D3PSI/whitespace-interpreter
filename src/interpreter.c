@@ -1,3 +1,4 @@
+#include "map.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,17 +7,23 @@
 #define STACK_SIZE 65536
 #define HEAP_SIZE 524288
 
+#define BUF_SIZE 1024
+
 // lexical tokens
 #define SPACE ' '
 #define TAB '\t'
 #define LINEFEED '\n'
 
+char* source;
+map_int_t map_label;
+
 struct tokenizer_context {
+    int traversed_buf_size;
     int line;
     int col;
 };
 
-struct tokenizer_context context = {1, 1};
+struct tokenizer_context context = {0, 1, 1};
 
 int heap[HEAP_SIZE] = {};
 
@@ -79,19 +86,32 @@ void error() {
     exit(EXIT_FAILURE);
 }
 
-int next_char() {
-    int c = getchar();
+char next_char() {
+    char c = source[context.traversed_buf_size++];
     if (c == '\n') {
         context.line += 1;
         context.col = 1;
     } else {
         context.col += 1;
     }
-    return getchar();
+    switch (c) {
+    case SPACE:
+        printf("SPACE ");
+        break;
+    case TAB:
+        printf("TAB ");
+        break;
+    case LINEFEED:
+        printf("LINEFEED ");
+        break;
+    default:
+        printf("Unknown token [%s]", c);
+    }
+    return c;
 }
 
 int number() {
-    int c;
+    char c;
     int first = true;
     int positive = true;
     int finished = false;
@@ -140,7 +160,7 @@ void swap_stack() {
 void discard_stack() { pop(&stack); }
 
 void stack_manipulation() {
-    int c;
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -202,7 +222,7 @@ void modulo() {
 }
 
 void arithmetic() {
-    int c;
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -257,7 +277,7 @@ void retrieve() {
 }
 
 void heap_access() {
-    int c;
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -275,7 +295,7 @@ void heap_access() {
 }
 
 int label() {
-    int c;
+    char c;
     int finished = false;
     int number = 0;
     // TODO: handle integer buffer overflow
@@ -301,20 +321,62 @@ int label() {
     return 0;
 }
 
-// TODO: introduce some sort of call stack
-void mark() {
-    // TODO: find a solution to count bytes to unread until label
+void mark() { map_set(&map_label, label(), context.traversed_buf_size); }
+
+void call() {
+    int l = label();
+    int pos = map_get(&map_label, l);
+    if (pos == NULL) {
+        printf("Label not defined [%d]", l);
+        exit(EXIT_FAILURE);
+    }
+    push(&stack, context.traversed_buf_size);
+    push(&stack, l);
+    context.traversed_buf_size = pos;
 }
 
-void call() {}
+void jump() {
+    int l = label();
+    int pos = map_get(&map_label, l);
+    if (pos == NULL) {
+        printf("Label not defined [%d]", l);
+        exit(EXIT_FAILURE);
+    }
+    context.traversed_buf_size = pos;
+}
 
-void jump() {}
+void jump_zero() {
+    int l = label();
+    int pos = map_get(&map_label, l);
+    if (pos == NULL) {
+        printf("Label not defined [%d]", l);
+        exit(EXIT_FAILURE);
+    }
+    if (peek(&stack) == 0) {
+        context.traversed_buf_size = pos;
+    }
+}
 
-void jump_zero() {}
+void jump_negative() {
+    int l = label();
+    int pos = map_get(&map_label, l);
+    if (pos == NULL) {
+        printf("Label not defined [%d]", l);
+        exit(EXIT_FAILURE);
+    }
+    if (peek(&stack) < 0) {
+        context.traversed_buf_size = pos;
+    }
+}
 
-void jump_negative() {}
-
-void return_to_caller() {}
+void return_to_caller() {
+    int top = pop(&stack);
+    while (map_get(&map_label, top) == NULL) {
+        top = pop(&stack);
+    }
+    top = pop(&stack);
+    context.traversed_buf_size = top;
+}
 
 void end() {
     printf("Whitespace-Routine finished");
@@ -322,7 +384,7 @@ void end() {
 }
 
 void flow_control() {
-    int c;
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -394,7 +456,7 @@ void input_char() {
 void input_number() { input_char(); }
 
 void io() {
-    int c;
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -436,7 +498,8 @@ void io() {
 }
 
 void interpret() {
-    int c;
+    map_init(&map_label);
+    char c;
     while ((c = next_char()) != EOF) {
         switch (c) {
         case SPACE:
@@ -469,7 +532,44 @@ void interpret() {
     }
 }
 
+void read() {
+    char buffer[BUF_SIZE];
+    size_t contentSize = 1;
+    char* content = malloc(sizeof(char) * BUF_SIZE);
+    if (content == NULL) {
+        perror("Failed to allocate content");
+        exit(1);
+    }
+    content[0] = '\0';
+    while (fgets(buffer, BUF_SIZE, stdin)) {
+        char* old = content;
+        contentSize += strlen(buffer);
+        content = realloc(content, contentSize);
+        if (content == NULL) {
+            perror("Failed to reallocate content");
+            free(old);
+            exit(2);
+        }
+        strcat(content, buffer);
+    }
+
+    if (ferror(stdin)) {
+        free(content);
+        perror("Error reading from stdin.");
+        exit(3);
+    }
+
+    source = content;
+}
+
+void clean() {
+    free(source);
+    map_deinit(&map_label);
+}
+
 int main() {
+    read();
     interpret();
+    clean();
     return 0;
 }
