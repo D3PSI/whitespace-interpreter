@@ -1,1 +1,6 @@
-build/
+interpreter
+CMakeFiles
+.gdb_history
+CMakeCache.txt
+Makefile
+cmake_install.cmake

@@ -14,6 +14,8 @@
 #define TAB '\t'
 #define LINEFEED '\n'
 
+#define NULL_TERM '\0'
+
 char* source;
 map_int_t map_label;
 
@@ -25,7 +27,7 @@ struct tokenizer_context {
 
 struct tokenizer_context context = {0, 1, 1};
 
-int heap[HEAP_SIZE] = {};
+int* heap;
 
 struct stack_impl {
     int maxsize;
@@ -33,9 +35,9 @@ struct stack_impl {
     int* items;
 };
 
-struct stack_impl stack = {.maxsize = STACK_SIZE};
+struct stack_impl* stack;
 
-struct stack_impl* newStack(int capacity) {
+struct stack_impl* new_stack(int capacity) {
     struct stack_impl* pt = (struct stack_impl*)malloc(sizeof(struct stack_impl));
 
     pt->maxsize = capacity;
@@ -57,7 +59,7 @@ void push(struct stack_impl* pt, int x) {
         exit(EXIT_FAILURE);
     }
 
-    printf("Inserting %d\n", x);
+    // printf("Inserting %d\n", x);
 
     pt->items[++pt->top] = x;
 }
@@ -76,7 +78,7 @@ int pop(struct stack_impl* pt) {
         exit(EXIT_FAILURE);
     }
 
-    printf("Removing %d\n", peek(pt));
+    // printf("Removing %d\n", peek(pt));
 
     return pt->items[pt->top--];
 }
@@ -94,26 +96,13 @@ char next_char() {
     } else {
         context.col += 1;
     }
-    switch (c) {
-    case SPACE:
-        printf("SPACE ");
-        break;
-    case TAB:
-        printf("TAB ");
-        break;
-    case LINEFEED:
-        printf("LINEFEED ");
-        break;
-    default:
-        printf("Unknown token [%s]", c);
-    }
     return c;
 }
 
 int number() {
     char c;
     int first = true;
-    int positive = true;
+    int positive = false;
     int finished = false;
     int number = 0;
     // TODO: handle integer buffer overflow
@@ -124,7 +113,7 @@ int number() {
             break;
         case TAB:
             if (first) {
-                positive = false;
+                positive = true;
                 first = false;
             }
             number = (number << 1) | 1;
@@ -146,18 +135,18 @@ int number() {
     return 0;
 }
 
-void push_stack() { push(&stack, number()); }
+void push_stack() { push(stack, number()); }
 
-void duplicate_stack() { push(&stack, peek(&stack)); }
+void duplicate_stack() { push(stack, peek(stack)); }
 
 void swap_stack() {
-    int top = pop(&stack);
-    int bot = pop(&stack);
-    push(&stack, top);
-    push(&stack, bot);
+    int top = pop(stack);
+    int bot = pop(stack);
+    push(stack, top);
+    push(stack, bot);
 }
 
-void discard_stack() { pop(&stack); }
+void discard_stack() { pop(stack); }
 
 void stack_manipulation() {
     char c;
@@ -192,33 +181,33 @@ void stack_manipulation() {
 }
 
 void addition() {
-    int right = pop(&stack);
-    int left = pop(&stack);
-    push(&stack, left + right);
+    int right = pop(stack);
+    int left = pop(stack);
+    push(stack, left + right);
 }
 
 void subtraction() {
-    int right = pop(&stack);
-    int left = pop(&stack);
-    push(&stack, left - right);
+    int right = pop(stack);
+    int left = pop(stack);
+    push(stack, left - right);
 }
 
 void multiplication() {
-    int right = pop(&stack);
-    int left = pop(&stack);
-    push(&stack, left * right);
+    int right = pop(stack);
+    int left = pop(stack);
+    push(stack, left * right);
 }
 
 void int_division() {
-    int right = pop(&stack);
-    int left = pop(&stack);
-    push(&stack, left / right);
+    int right = pop(stack);
+    int left = pop(stack);
+    push(stack, left / right);
 }
 
 void modulo() {
-    int right = pop(&stack);
-    int left = pop(&stack);
-    push(&stack, left % right);
+    int right = pop(stack);
+    int left = pop(stack);
+    push(stack, left % right);
 }
 
 void arithmetic() {
@@ -266,14 +255,14 @@ void arithmetic() {
 }
 
 void store() {
-    int val = pop(&stack);
-    int addr = pop(&stack);
+    int val = pop(stack);
+    int addr = pop(stack);
     heap[addr] = val;
 }
 
 void retrieve() {
-    int addr = pop(&stack);
-    push(&stack, heap[addr]);
+    int addr = pop(stack);
+    push(stack, heap[addr]);
 }
 
 void heap_access() {
@@ -330,8 +319,8 @@ void call() {
         printf("Label not defined [%d]", l);
         exit(EXIT_FAILURE);
     }
-    push(&stack, context.traversed_buf_size);
-    push(&stack, l);
+    push(stack, context.traversed_buf_size);
+    push(stack, l);
     context.traversed_buf_size = pos;
 }
 
@@ -352,7 +341,7 @@ void jump_zero() {
         printf("Label not defined [%d]", l);
         exit(EXIT_FAILURE);
     }
-    if (peek(&stack) == 0) {
+    if (peek(stack) == 0) {
         context.traversed_buf_size = pos;
     }
 }
@@ -364,22 +353,22 @@ void jump_negative() {
         printf("Label not defined [%d]", l);
         exit(EXIT_FAILURE);
     }
-    if (peek(&stack) < 0) {
+    if (peek(stack) < 0) {
         context.traversed_buf_size = pos;
     }
 }
 
 void return_to_caller() {
-    int top = pop(&stack);
+    int top = pop(stack);
     while (map_get(&map_label, top) == NULL) {
-        top = pop(&stack);
+        top = pop(stack);
     }
-    top = pop(&stack);
+    top = pop(stack);
     context.traversed_buf_size = top;
 }
 
 void end() {
-    printf("Whitespace-Routine finished");
+    printf("\n\nWhitespace-Routine finished\n");
     exit(EXIT_SUCCESS);
 }
 
@@ -424,9 +413,10 @@ void flow_control() {
         case LINEFEED:
             c = next_char();
             switch (c) {
+            case NULL_TERM:
             case LINEFEED:
                 end();
-                break;
+                return;
             case SPACE:
             case TAB:
             default:
@@ -441,17 +431,11 @@ void flow_control() {
     }
 }
 
-void output_char() {
-    int addr = pop(&stack);
-    printf("%d", heap[addr]);
-}
+void output_char() { printf("%c", pop(stack)); }
 
 void output_number() { output_char(); }
 
-void input_char() {
-    int c = getchar();
-    push(&stack, c);
-}
+void input_char() { push(stack, getchar()); }
 
 void input_number() { input_char(); }
 
@@ -498,6 +482,8 @@ void io() {
 }
 
 void interpret() {
+    heap = malloc(HEAP_SIZE);
+    stack = new_stack(STACK_SIZE);
     map_init(&map_label);
     char c;
     while ((c = next_char()) != EOF) {
@@ -525,6 +511,8 @@ void interpret() {
         case LINEFEED:
             flow_control();
             break;
+        case NULL_TERM:
+            return;
         default:
             error();
             return;
@@ -563,6 +551,8 @@ void read() {
 }
 
 void clean() {
+    free(heap);
+    free(stack->items);
     free(source);
     map_deinit(&map_label);
 }
